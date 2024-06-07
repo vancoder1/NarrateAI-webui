@@ -70,9 +70,6 @@ sympy==1.12
 tbb==2021.11.0
 tomlkit==0.12.0
 toolz==0.12.1
-torch==2.3.1+cu121
-torchaudio==2.3.1+cu121
-torchvision==0.18.1+cu121
 tqdm==4.66.4
 typer==0.12.3
 typing_extensions==4.12.2
