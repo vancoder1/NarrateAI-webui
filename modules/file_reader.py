@@ -1,5 +1,8 @@
 import os
 import PyPDF2
+import modules.logging_config as lf
+
+logger = lf.configure_logger(__name__)
 
 def read_pdf(path_to_file) -> str:
     if not os.path.isfile(path_to_file):

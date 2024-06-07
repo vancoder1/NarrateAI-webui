@@ -1,5 +1,6 @@
 {
-    "tts": {
+    "settings": {
+        "language": "en",
         "model_id": "v3_en",
         "speaker": "en_107",
         "sample_rate": 48000
