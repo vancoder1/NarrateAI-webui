@@ -1,12 +1,7 @@
 import os
 import gradio as gr
 import modules.silero_tts as silero
-
-# Function to read text from a file
-def read_text(file_path):
-    with open(file_path, 'r', encoding='utf-8') as file:
-        text = file.read()
-    return text
+import modules.file_reader as fr
 
 # Function to generate an audiobook using SileroTTS
 def generate_audiobook(text, tts):
@@ -17,7 +12,12 @@ def generate_audiobook(text, tts):
 def handle_inputs(file):
     reader = silero.Silero_TTS()
     reader.load_model()
-    text = read_text(file.name)
+    if file.name.lower().endswith('.txt'):
+        text = fr.read_txt(file.name)
+    elif file.name.lower().endswith('.pdf'):
+        text = fr.read_pdf(file.name)
+    else:
+        raise ValueError("Invalid file extension")
     audio_path = generate_audiobook(text, reader)
     return audio_path
 
