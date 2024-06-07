@@ -3,7 +3,6 @@ import gradio as gr
 import modules.silero_tts as silero
 import modules.file_reader as fr
 
-
 class AudiobookGeneratorApp:
     def __init__(self):
         self.reader = silero.Silero_TTS()
