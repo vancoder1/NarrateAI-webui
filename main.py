@@ -16,7 +16,9 @@ class AudiobookGeneratorApp:
             text = fr.read_pdf(file.name)
         else:
             raise ValueError("Invalid file extension")
-        audio_path = self.reader.process_audio(text)
+        file_name = os.path.basename(file.name)
+        file_name = os.path.splitext(file_name)[0]
+        audio_path = self.reader.process_audio(text, file_name)
         return audio_path
 
     def create_main_interface(self):
