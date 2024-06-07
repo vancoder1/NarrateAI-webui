@@ -1,5 +1,4 @@
 import json
-import logging
 import modules.logging_config as lf
 
 logger = lf.configure_logger(__name__)
