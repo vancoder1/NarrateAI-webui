@@ -1,5 +1,5 @@
 import os
-import PyPDF2
+from pdfreader import SimplePDFViewer, PDFDocument, PageDoesNotExist
 import modules.logging_config as lf
 
 logger = lf.configure_logger(__name__)
@@ -12,10 +12,17 @@ def read_pdf(path_to_file) -> str:
         raise ValueError(f"Invalid file extension for PDF: '{path_to_file}'")
     
     with open(path_to_file, "rb") as file:
-        reader = PyPDF2.PdfFileReader(file)
+        viewer = SimplePDFViewer(file)
         content = ""
-        for page in range(reader.getNumPages()):
-            content += reader.getPage(page).extract_text()
+        
+        while True:
+            try:
+                viewer.render()
+                content += "".join(viewer.canvas.strings)
+                viewer.next()
+            except PageDoesNotExist:
+                break
+        
         return content
 
 def read_txt(path_to_file) -> str:
