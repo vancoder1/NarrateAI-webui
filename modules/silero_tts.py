@@ -1,6 +1,7 @@
 import os
 import torch
 from scipy.io.wavfile import write
+from pydub import AudioSegment
 import modules.json_handler as jh
 import modules.logging_config as lf
 
@@ -38,21 +39,60 @@ class Silero_TTS:
                                            model_path)  
         self.model = torch.package.PackageImporter(model_path).load_pickle("tts_models", "model")
         self.model.to(self.device)
+
+    def split_text(self, text, max_length=1000):
+        """
+        Splits the text into chunks of a maximum length.
+        """
+        words = text.split()
+        chunks = []
+        chunk = []
+
+        for word in words:
+            if len(' '.join(chunk + [word])) > max_length:
+                chunks.append(' '.join(chunk))
+                chunk = [word]
+            else:
+                chunk.append(word)
+        
+        if chunk:
+            chunks.append(' '.join(chunk))
+        
+        return chunks
     
     def process_audio(self, input_text: str, file_name: str):
         try:
-            # Generate audio from text
-            audio = self.model.apply_tts(text=input_text, speaker=self.speaker, sample_rate=self.sample_rate)
-            
+            output_dir = 'outputs/' + file_name + '/'
             # Ensure output directory exists
-            if not os.path.exists('outputs/'):
-                os.makedirs('outputs/', exist_ok=True)
-            
-            # Save the audio to a .wav file
-            output_path = 'outputs/' + file_name + '.mp3'
-            write(output_path, self.sample_rate, audio.numpy())
-            
-            return output_path
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+
+            # Split the input text into smaller chunks
+            text_chunks = self.split_text(input_text)
+
+            # Generate and save audio for each chunk
+            audio_output_paths = []
+            for i, chunk in enumerate(text_chunks):
+                audio = self.model.apply_tts(text=chunk, speaker=self.speaker, sample_rate=self.sample_rate)
+                chunk_file_name = f"{file_name}_chunk_{i}.mp3"
+                output = output_dir + chunk_file_name
+                write(output, self.sample_rate, audio.numpy())
+                audio_output_paths.append(output)
+
+            # Combine all chunks into one audio file
+            combined = AudioSegment.empty()
+            for path in audio_output_paths:
+                segment = AudioSegment.from_wav(path)
+                combined += segment
+
+            combined_output_path = f'{output_dir}{file_name}.mp3'
+            combined.export(combined_output_path, format="mp3")
+
+            # Delete the individual chunk files
+            for path in audio_output_paths:
+                os.remove(path)
+
+            return combined_output_path
         except Exception as e:
             logger.error(f"An error occurred while processing audio: {e}")
             return None
