@@ -1,7 +1,7 @@
 import os
 import gradio as gr
-import modules.silero_tts as silero
-import modules.file_reader as fr
+import audio.silero_tts as silero
+import utils.file_reader as fr
 
 class AudiobookGeneratorApp:
     def __init__(self):

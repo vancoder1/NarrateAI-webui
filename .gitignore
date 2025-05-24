@@ -166,3 +166,5 @@ flagged/
 outputs/
 
 models/
+
+logs/

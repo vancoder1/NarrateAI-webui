@@ -2,16 +2,18 @@ import os
 import torch
 from scipy.io.wavfile import write
 from pydub import AudioSegment
-import modules.json_handler as jh
-import modules.logging_config as lf
+import utils.json_handler as jh
+import utils.logging_config as lf
 
 logger = lf.configure_logger(__name__)
-json_handler = jh.JsonHandler('config.json')
+json_handler = jh.JsonHandler()
 
-LANGUAGE = json_handler.get_setting('settings.language')
-MODEL_ID = json_handler.get_setting('settings.model_id')
-SPEAKER = json_handler.get_setting('settings.speaker')
+DEVICE = json_handler.get_setting('settings.device')
 SAMPLE_RATE = json_handler.get_setting('settings.sample_rate')
+LANGUAGE = json_handler.get_setting('settings.silero_tts.lang_code')
+MODEL_ID = json_handler.get_setting('settings.silero_tts.model_id')
+SPEAKER = json_handler.get_setting('settings.silero_tts.speaker')
+MODEL_PATH = json_handler.get_setting('settings.silero_tts.model_path')
 
 class Silero_TTS:
     def __init__(self, 
@@ -19,16 +21,16 @@ class Silero_TTS:
                  model_id: str = MODEL_ID, 
                  speaker: str = SPEAKER, 
                  sample_rate: int = SAMPLE_RATE,
-                 model_dir: str = 'models'):
+                 model_path: str = MODEL_PATH):
         self.language = language
         self.model_id = model_id
         self.speaker = speaker
         self.sample_rate = sample_rate
-        self.model_dir = model_dir
+        self.model_path = model_path
         self.model = None
 
     def load_model(self):
-        model_path = self.model_dir + '/' + self.model_id
+        model_path = self.model_path + '/' + self.model_id
         if not os.path.exists(model_path):
             os.makedirs(model_path, exist_ok=True)
 

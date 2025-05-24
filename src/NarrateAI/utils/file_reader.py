@@ -1,6 +1,6 @@
 import os
 from pdfreader import SimplePDFViewer, PDFDocument, PageDoesNotExist
-import modules.logging_config as lf
+import utils.logging_config as lf
 
 logger = lf.configure_logger(__name__)
 
