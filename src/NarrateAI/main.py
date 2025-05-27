@@ -1,12 +1,11 @@
 import os
 import gradio as gr
-import audio.silero_tts as silero
+import audio.kokoro_tts as kokoro
 import utils.file_reader as fr
 
 class AudiobookGeneratorApp:
     def __init__(self):
-        self.reader = silero.Silero_TTS()
-        self.reader.load_model()
+        self.reader = kokoro.Kokoro_TTS()
 
     def generate_audiobook(self, file):
         if file.name.lower().endswith('.txt'):

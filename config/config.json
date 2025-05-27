@@ -1,14 +1,5 @@
 {
     "settings": {
-        "device": "cuda",
-        "sample_rate": 48000,
-        "silero_tts": {
-            "model_path": "models/silero_tts",
-            "lang_code": "en",
-            "model_id": "v3_en",
-            "speaker": "en_107"
-            
-        },
         "kokoro_tts": {
             "model_path": "models/kokoro_tts",
             "lang_code": "a",
