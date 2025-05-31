@@ -3,7 +3,81 @@
         "kokoro_tts": {
             "model_path": "models/kokoro_tts",
             "lang_code": "a",
-            "voice": "af_heart"
+            "voice": "af_bella",
+            "language_voices_map": {
+                "a": [
+                    "af_heart",
+                    "af_bella",
+                    "af_nicole",
+                    "af_aoede",
+                    "af_kore",
+                    "af_sarah",
+                    "am_fenrir",
+                    "am_michael",
+                    "am_puck",
+                    "af_alloy",
+                    "af_nova",
+                    "af_sky",
+                    "af_jessica",
+                    "af_river",
+                    "am_echo",
+                    "am_eric",
+                    "am_liam",
+                    "am_onyx",
+                    "am_santa",
+                    "am_adam"
+                ],
+                "b": [
+                    "bf_emma",
+                    "bf_isabella",
+                    "bm_fable",
+                    "bm_george",
+                    "bm_lewis",
+                    "bf_alice",
+                    "bf_lily",
+                    "bm_daniel"
+                ],
+                "j": [
+                    "jf_alpha",
+                    "jf_gongitsune",
+                    "jf_tebukuro",
+                    "jf_nezumi",
+                    "jm_kumo"
+                ],
+                "z": [
+                    "zf_xiaobei",
+                    "zf_xiaoni",
+                    "zf_xiaoxiao",
+                    "zf_xiaoyi",
+                    "zm_yunjian",
+                    "zm_yunxi",
+                    "zm_yunxia",
+                    "zm_yunyang"
+                ],
+                "e": [
+                    "ef_dora",
+                    "em_alex",
+                    "em_santa"
+                ],
+                "f": [
+                    "ff_siwis"
+                ],
+                "h": [
+                    "hf_alpha",
+                    "hf_beta",
+                    "hm_omega",
+                    "hm_psi"
+                ],
+                "i": [
+                    "if_sara",
+                    "im_nicola"
+                ],
+                "p": [
+                    "pf_dora",
+                    "pm_alex",
+                    "pm_santa"
+                ]
+            }
         }
     }
 }
