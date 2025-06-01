@@ -94,12 +94,8 @@ class AudiobookGeneratorApp:
             return f"Unexpected error during settings update: {e}. Check logs."
 
     def build_settings_components(self):
-        """
-        Builds the UI components for the settings tab into the current gr.Blocks context.
-        Does not create its own gr.Blocks() instance.
-        """
         logger.info("Building settings UI components.")
-        gr.Markdown("## TTS Settings")
+        gr.Markdown("## Settings")
         
         kokoro_settings = self.json_handler.get_setting('settings.kokoro_tts')
         if kokoro_settings is None:
@@ -163,15 +159,14 @@ class AudiobookGeneratorApp:
     def create_main_interface(self):
         logger.info("Creating main Gradio interface using gr.Tabs.")
         
-        with gr.Blocks(theme=gr.themes.Soft()) as demo_ui:
+        with gr.Blocks(theme=gr.themes.Soft(), title="NarrateAI Audiobook Generator") as demo_ui:
             with gr.Tabs():
                 with gr.TabItem("Audiobook Generator"):
+                    gr.Markdown("## Audiobook Generator")
                     gr.Interface(
                         fn=self.generate_audiobook,
                         inputs=[gr.File(label="Upload your document (TXT, PDF, EPUB, DOCX, HTML)", type="filepath")],
                         outputs=[gr.Audio(label="Generated Audiobook", type="filepath")],
-                        title="NarrateAI Audiobook Generator",
-                        description="Upload a document to generate an audiobook using Text-to-Speech.",
                         allow_flagging="never"
                     )
                 
