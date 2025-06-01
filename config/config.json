@@ -6,7 +6,6 @@
             "voice": "af_heart",
             "speed": 1.0,
             "device": "cuda",
-            "output_format": "wav",
             "language_voices_map": {
                 "a": [
                     "af_heart",

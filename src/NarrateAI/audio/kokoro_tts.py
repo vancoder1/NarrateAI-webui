@@ -1,6 +1,7 @@
 import os
 import time
-from typing import Optional, List
+from typing import Optional, List, Callable
+import re
 import soundfile as sf
 from pydub import AudioSegment
 from kokoro import KPipeline
@@ -21,21 +22,18 @@ class Kokoro_TTS:
                  lang_code: Optional[str] = None,
                  voice: Optional[str] = None,
                  speed: Optional[float] = None,
-                 device: Optional[str] = None,
-                 output_format: Optional[str] = None):
+                 device: Optional[str] = None):
         self.sample_rate = sample_rate
-        # Prioritize constructor arguments, then JSON settings
         tts_settings = json_handler.get_setting('settings.kokoro_tts')
         if tts_settings is None:
-            # This case should ideally not happen if config.json is present and correct
             logger.critical("Failed to load 'settings.kokoro_tts' from JSON. TTS will likely fail.")
-            tts_settings = {} # Prevent further NoneType errors, rely on defaults or raise
+            tts_settings = {}
 
         self.lang_code = lang_code if lang_code is not None else tts_settings.get('lang_code')
         self.voice = voice if voice is not None else tts_settings.get('voice')
         self.speed = speed if speed is not None else tts_settings.get('speed', 1.0)
         self.device = device if device is not None else tts_settings.get('device', 'cpu')
-        self.output_format = output_format if output_format is not None else tts_settings.get('output_format', 'wav') # Default format
+        self.output_format = 'wav'
         
         self.pipeline: Optional[KPipeline] = None
 
@@ -59,14 +57,14 @@ class Kokoro_TTS:
             end_time = time.time()
             logger.info(f"KokoroTTS pipeline initialized successfully in {end_time - start_time:.2f} seconds.")
             return pipeline
-        except ImportError: 
+        except ImportError:
             logger.critical('Fatal: KPipeline could not be imported. Ensure "kokoro" library is installed.', exc_info=True)
             raise RuntimeError("TTS Pipeline initialization failed: 'kokoro' library not found.")
         except Exception as e:
             logger.critical(f'Fatal: Failed to initialize KokoroTTS pipeline: {e}', exc_info=True)
             raise RuntimeError(f"TTS Pipeline initialization failed: {e}") from e
-    
-    def process_audio(self, input_text: str, base_file_name: str) -> Optional[str]:
+
+    def process_audio(self, input_text: str, base_file_name: str, progress_callback: Optional[Callable] = None) -> Optional[str]:
         base_file_name = os.path.basename(base_file_name)
 
         if not self.pipeline:
@@ -89,40 +87,58 @@ class Kokoro_TTS:
         chunk_output_dir = os.path.join(OUTPUTS_DIR, base_file_name + "_chunks")
         audio_output_paths: List[str] = []
 
+        split_pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|\!|։|۔|。)\s'
+
+        segments = re.split(split_pattern, input_text)
+        filtered_segments = [s for s in segments if s and s.strip()]
+        total_chunks_estimate = len(filtered_segments)
+        if not filtered_segments and input_text and input_text.strip():
+            total_chunks_estimate = 1
+        if total_chunks_estimate == 0 and input_text and input_text.strip():
+            total_chunks_estimate = 1
+
+
         try:
             os.makedirs(chunk_output_dir, exist_ok=True)
             logger.debug(f"Chunk output directory for '{base_file_name}': {chunk_output_dir}")
-            split_pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|\!|։|۔|。)\s'
-            
+
             generator = self.pipeline(
                 text=input_text,
                 voice=self.voice,
                 speed=self.speed,
                 split_pattern=split_pattern
             )
-            
+
+            generated_chunk_count = 0
             for i, (gs, ps, audio_data) in enumerate(generator):
+                generated_chunk_count +=1
                 chunk_file_name = f"{base_file_name}_chunk_{i:03d}.wav" # Padded for sorting
                 chunk_file_path = os.path.join(chunk_output_dir, chunk_file_name)
                 sf.write(chunk_file_path, audio_data, self.sample_rate)
                 audio_output_paths.append(chunk_file_path)
-            
+                if progress_callback:
+                    current_progress_total = max(total_chunks_estimate, 1)
+                    progress_callback(generated_chunk_count, current_progress_total, f"Generating audio chunk {generated_chunk_count}/{current_progress_total if total_chunks_estimate > 0 else '...'}")
+
             if not audio_output_paths:
                 logger.warning(f"No audio chunks generated for '{base_file_name}'. Text might be unsuitable or too short.")
-                return None # No chunks, so no final file
+                return None
 
             logger.info(f"Generated {len(audio_output_paths)} audio chunks for '{base_file_name}'.")
 
             combined_audio = AudioSegment.empty()
-            for path in audio_output_paths:
+            num_chunks_to_combine = len(audio_output_paths)
+            for idx, path in enumerate(audio_output_paths):
+                if progress_callback:
+                    progress_callback(idx + 1, num_chunks_to_combine, f"Combining chunk {idx + 1}/{num_chunks_to_combine}")
                 try:
                     segment = AudioSegment.from_wav(path)
                     combined_audio += segment
-                except Exception as e: 
+                except Exception as e:
                     logger.error(f"Error loading audio chunk '{path}' for '{base_file_name}': {e}. Skipping chunk.", exc_info=True)
-                    continue 
+                    continue
 
-            if len(combined_audio) == 0: # Check if combined audio has any duration
+            if len(combined_audio) == 0:
                 logger.error(f"Combined audio for '{base_file_name}' is empty. All chunks might have failed processing or were unsuitable.")
                 return None
 
@@ -138,7 +154,6 @@ class Kokoro_TTS:
             logger.error(f"Unexpected error during audio processing for '{base_file_name}': {e}", exc_info=True)
             raise RuntimeError(f"Audio processing failed unexpectedly for '{base_file_name}': {e}") from e
         finally:
-            # Cleanup: Remove chunk files and attempt to remove the chunk directory
             if os.path.exists(chunk_output_dir):
                 for path in audio_output_paths:
                     if os.path.exists(path):
@@ -147,11 +162,10 @@ class Kokoro_TTS:
                         except OSError as e_rm:
                             logger.warning(f"Could not remove chunk file {path} for '{base_file_name}': {e_rm}")
                 try:
-                    if not os.listdir(chunk_output_dir): # Only remove if empty
+                    if not os.listdir(chunk_output_dir):
                          os.rmdir(chunk_output_dir)
                          logger.debug(f"Successfully removed empty chunk directory: {chunk_output_dir}")
                     else:
-                        # This case might happen if some chunks failed to be processed by pydub but were still written
                         logger.warning(f"Chunk directory {chunk_output_dir} for '{base_file_name}' not empty after processing, not removing. Contents: {os.listdir(chunk_output_dir)}")
                 except OSError as e_rmdir:
                     logger.warning(f"Could not remove chunk directory {chunk_output_dir} for '{base_file_name}': {e_rmdir}")
