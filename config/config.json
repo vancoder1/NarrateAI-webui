@@ -3,7 +3,10 @@
         "kokoro_tts": {
             "model_path": "models/kokoro_tts",
             "lang_code": "a",
-            "voice": "af_bella",
+            "voice": "af_heart",
+            "speed": 1.0,
+            "device": "cuda",
+            "output_format": "wav",
             "language_voices_map": {
                 "a": [
                     "af_heart",

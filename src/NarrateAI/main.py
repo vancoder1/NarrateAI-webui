@@ -5,11 +5,12 @@ import audio.kokoro_tts as kokoro
 from utils.file_reader import FileReader
 import utils.logging_config as lf
 import utils.json_handler as jh
+from utils.constants import OUTPUTS_DIR
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", category=RuntimeWarning) 
 
 logger = lf.configure_logger(__name__)
 
@@ -19,126 +20,177 @@ class AudiobookGeneratorApp:
         self.file_reader = FileReader()
         self.json_handler = jh.JsonHandler()
 
-    def generate_audiobook(self, uploaded_file_object):
-        logger.info(f"Attempting to generate audiobook for file: {uploaded_file_object.name}")
-        temp_file_path = uploaded_file_object.name
+    def generate_audiobook(self, uploaded_file_path: str):
+        if not uploaded_file_path:
+            logger.warning("No file uploaded for audiobook generation.")
+            raise gr.Error("Please upload a file to generate an audiobook.")
+
+        base_uploaded_filename = os.path.basename(uploaded_file_path)
+        logger.info(f"Attempting to generate audiobook for file: {base_uploaded_filename}")
+        
         try:
-            text_content = self.file_reader.read_file(temp_file_path)
-            logger.info(f"Successfully read content from {os.path.basename(temp_file_path)}")
-            if not text_content or text_content.isspace():
-                logger.warning(f"File {os.path.basename(temp_file_path)} is empty or contains no readable text.")
-                raise gr.Error(f"The file '{os.path.basename(temp_file_path)}' appears to be empty or contains no readable text.")
+            text_content = self.file_reader.read_file(uploaded_file_path)
+            logger.info(f"Successfully read content from {base_uploaded_filename}")
             
-            base_name_for_output = os.path.splitext(os.path.basename(temp_file_path))[0]
-            logger.info(f"Processing audio for {base_name_for_output}")
-            audio_output_path = self.tts_engine.process_audio(text_content, base_name_for_output)
+            if not text_content or text_content.isspace():
+                logger.warning(f"File {base_uploaded_filename} is empty or contains no readable text.")
+                raise gr.Error(f"The file '{base_uploaded_filename}' is empty or contains no extractable text.")
+            
+            output_base_name = os.path.splitext(base_uploaded_filename)[0]
+            logger.info(f"Processing audio for '{output_base_name}'")
+            
+            audio_output_path = self.tts_engine.process_audio(text_content, output_base_name)
+            
             if audio_output_path and os.path.exists(audio_output_path):
-                logger.info(f"Audiobook generated successfully at: {audio_output_path}")
+                logger.info(f"Audiobook generated successfully: {audio_output_path}")
                 return audio_output_path
+            elif audio_output_path is None:
+                 logger.warning(f"Audiobook generation for '{output_base_name}' resulted in no output file.")
+                 raise gr.Error(f"Audiobook generation for '{output_base_name}' did not produce an audio file. Input text might have been empty or unsuitable.")
             else:
-                logger.error(f"Audiobook generation failed for {base_name_for_output}. Output path: {audio_output_path}")
-                raise gr.Error("Audiobook generation failed. The audio file could not be created. Please check the logs.")
+                logger.error(f"Audiobook generation failed for '{output_base_name}'. Output path '{audio_output_path}' does not exist.")
+                raise gr.Error("Audiobook generation failed: The audio file was not created. Please check logs.")
 
         except FileNotFoundError as e:
-            logger.error(f"FileNotFoundError during audiobook generation: {e}")
-            raise gr.Error(f"An error occurred: {str(e)}. Please ensure the file was uploaded correctly.")
+            logger.error(f"File not found during audiobook generation: {e}", exc_info=True)
+            raise gr.Error(f"An error occurred: {str(e)}. Ensure the file exists and was uploaded correctly.")
         except ValueError as e:
-            logger.error(f"ValueError during audiobook generation: {e}")
-            raise gr.Error(f"{str(e)}")
+            logger.error(f"Value error during audiobook generation: {e}", exc_info=True)
+            raise gr.Error(str(e))
         except NotImplementedError as e:
-            logger.error(f"NotImplementedError during audiobook generation: {e}")
-            raise gr.Error(f"Processing error: {str(e)}. You might need to install additional libraries.")
+            logger.error(f"NotImplementedError during audiobook generation: {e}", exc_info=True)
+            raise gr.Error(f"Processing error: {str(e)}. You might need to install additional libraries (e.g., python-docx).")
+        except RuntimeError as e:
+            logger.error(f"Runtime error during audiobook generation: {e}", exc_info=True)
+            raise gr.Error(f"Audiobook generation encountered a runtime problem: {str(e)}. Check logs for details.")
         except Exception as e:
-            logger.critical(f"Critical Error: An unexpected error occurred in generate_audiobook: {e}", exc_info=True)
-            raise gr.Error(f"An unexpected error occurred. Please try again or check the application logs. Details: {str(e)}")
+            logger.critical(f"Critical unexpected error in generate_audiobook for {base_uploaded_filename}: {e}", exc_info=True)
+            raise gr.Error(f"An unexpected error occurred. Details: {str(e)}. Check application logs.")
 
-
-    def update_settings(self, lang_code, voice):
+    def update_settings(self, lang_code, voice, speed, device, output_format):
+        logger.info(f"Updating settings: lang='{lang_code}', voice='{voice}', speed={speed}, device='{device}', format='{output_format}'")
+        
         self.json_handler.set_setting('settings.kokoro_tts.lang_code', lang_code)
         self.json_handler.set_setting('settings.kokoro_tts.voice', voice)
-        # Re-initialize TTS engine with new settings
-        self.tts_engine = kokoro.Kokoro_TTS(lang_code=lang_code, voice=voice)
-        logger.info(f"Settings updated")
-        return "Settings updated successfully!"
+        self.json_handler.set_setting('settings.kokoro_tts.speed', float(speed))
+        self.json_handler.set_setting('settings.kokoro_tts.device', device)
+        self.json_handler.set_setting('settings.kokoro_tts.output_format', output_format)
+        
+        try:
+            self.tts_engine = kokoro.Kokoro_TTS(
+                lang_code=lang_code, 
+                voice=voice, 
+                speed=float(speed), 
+                device=device, 
+                output_format=output_format
+            )
+            logger.info("Settings updated and TTS engine re-initialized successfully.")
+            return "Settings updated successfully!"
+        except RuntimeError as e:
+            logger.error(f"Failed to re-initialize TTS engine with new settings: {e}", exc_info=True)
+            return f"Settings saved, but TTS engine re-initialization failed: {e}. Check logs."
+        except Exception as e:
+            logger.error(f"Unexpected error during settings update or TTS re-initialization: {e}", exc_info=True)
+            return f"Unexpected error during settings update: {e}. Check logs."
 
-    def create_settings_interface(self):
-        logger.info("Creating settings Gradio interface.")
-        with gr.Blocks() as settings_interface:
-            gr.Markdown("## Settings")
-            language_voices_map = self.json_handler.get_setting('settings.kokoro_tts.language_voices_map')
-            current_lang_code = self.json_handler.get_setting('settings.kokoro_tts.lang_code')
-            current_voice = self.json_handler.get_setting('settings.kokoro_tts.voice')
+    def build_settings_components(self):
+        """
+        Builds the UI components for the settings tab into the current gr.Blocks context.
+        Does not create its own gr.Blocks() instance.
+        """
+        logger.info("Building settings UI components.")
+        gr.Markdown("## TTS Settings")
+        
+        kokoro_settings = self.json_handler.get_setting('settings.kokoro_tts')
+        if kokoro_settings is None:
+            logger.error("Failed to load 'settings.kokoro_tts' for settings UI. Using defaults/empty.")
+            kokoro_settings = {}
 
-            # Get initial language codes and voices
-            available_lang_codes = list(language_voices_map.keys())
-            initial_voices = language_voices_map.get(current_lang_code, [])
+        language_voices_map = kokoro_settings.get('language_voices_map', {})
+        current_lang_code = kokoro_settings.get('lang_code', list(language_voices_map.keys())[0] if language_voices_map else "")
+        current_voice = kokoro_settings.get('voice', "") # Default to empty if not set
+        current_speed = float(kokoro_settings.get('speed', 1.0))
+        current_device = kokoro_settings.get('device', 'cpu')
+        current_output_format = kokoro_settings.get('output_format', 'wav')
 
+        available_lang_codes = list(language_voices_map.keys())
+        initial_voices = language_voices_map.get(current_lang_code, [])
+        
+        # Ensure current_voice is valid or set to the first available, or None if no voices
+        if current_voice not in initial_voices:
+            current_voice = initial_voices[0] if initial_voices else None
+
+        with gr.Row():
             lang_code_input = gr.Dropdown(
-                label="Language Code",
-                choices=available_lang_codes,
-                value=current_lang_code,
-                interactive=True
+                label="Language Code", choices=available_lang_codes, value=current_lang_code, interactive=True
             )
             voice_input = gr.Dropdown(
-                label="Voice",
-                choices=initial_voices,
-                value=current_voice if current_voice in initial_voices else (initial_voices[0] if initial_voices else None),
-                interactive=True
+                label="Voice", choices=initial_voices, value=current_voice, interactive=True
             )
-            update_button = gr.Button("Update Settings")
-            output_message = gr.Textbox(label="Status", interactive=False)
+        
+        speed_input = gr.Slider(
+            minimum=0.1, maximum=2.0, step=0.1, value=current_speed, label="Speed", interactive=True
+        )
+        device_input = gr.Radio(
+            choices=["cpu", "cuda"], value=current_device, label="Device", interactive=True
+        )
+        output_format_input = gr.Dropdown(
+            choices=["wav", "mp3"], value=current_output_format, label="Output Format", interactive=True
+        )
+        
+        update_button = gr.Button("Update Settings")
+        output_message = gr.Textbox(label="Status", interactive=False, lines=1)
 
-            def get_voices_for_lang(lang_code):
-                return gr.Dropdown(choices=language_voices_map.get(lang_code, []), value=None)
+        def get_voices_for_lang_dropdown_update(lang_code_selection):
+            voices = language_voices_map.get(lang_code_selection, [])
+            new_voice_value = voices[0] if voices else None
+            return gr.Dropdown.update(choices=voices, value=new_voice_value, interactive=True)
 
-            lang_code_input.change(
-                fn=get_voices_for_lang,
-                inputs=[lang_code_input],
-                outputs=[voice_input]
-            )
+        lang_code_input.change(
+            fn=get_voices_for_lang_dropdown_update,
+            inputs=[lang_code_input],
+            outputs=[voice_input]
+        )
 
-            update_button.click(
-                fn=self.update_settings,
-                inputs=[lang_code_input, voice_input],
-                outputs=output_message
-            )
-        logger.info("Settings Gradio interface created.")
-        return settings_interface
+        update_button.click(
+            fn=self.update_settings,
+            inputs=[lang_code_input, voice_input, speed_input, device_input, output_format_input],
+            outputs=output_message
+        )
+        logger.info("Settings UI components built.")
+
 
     def create_main_interface(self):
-        logger.info("Creating main Gradio interface.")
-        with gr.TabbedInterface(
-            [
-                gr.Interface(
-                    fn=self.generate_audiobook,
-                    inputs=[
-                        gr.File(
-                            label="Upload your document (TXT, PDF, EPUB, DOCX, HTML)",
-                            type="filepath"
-                        )
-                    ],
-                    outputs=[
-                        gr.Audio(
-                            label="Generated Audiobook",
-                            type="filepath"
-                        )
-                    ],
-                    title="NarrateAI Audiobook Generator"
-                ),
-                self.create_settings_interface()
-            ],
-            ["Audiobook Generator", "Settings"]
-        ) as interface:
-            logger.info("Gradio interface created.")
-            return interface
+        logger.info("Creating main Gradio interface using gr.Tabs.")
+        
+        with gr.Blocks(theme=gr.themes.Soft()) as demo_ui:
+            with gr.Tabs():
+                with gr.TabItem("Audiobook Generator"):
+                    gr.Interface(
+                        fn=self.generate_audiobook,
+                        inputs=[gr.File(label="Upload your document (TXT, PDF, EPUB, DOCX, HTML)", type="filepath")],
+                        outputs=[gr.Audio(label="Generated Audiobook", type="filepath")],
+                        title="NarrateAI Audiobook Generator",
+                        description="Upload a document to generate an audiobook using Text-to-Speech.",
+                        allow_flagging="never"
+                    )
+                
+                with gr.TabItem("Settings"):
+                    self.build_settings_components()
+            
+        logger.info("Gradio main interface with gr.Tabs created.")
+        return demo_ui
 
     def launch(self):
         logger.info("Launching Gradio interface.")
-        interface = self.create_main_interface()
-        interface.launch(share=False)
+        main_ui = self.create_main_interface()
+        main_ui.launch(share=False, inbrowser=True) 
         logger.info("Gradio interface launched.")
 
-# Launch the Gradio interface
 if __name__ == "__main__":
+    if not os.path.exists(OUTPUTS_DIR):
+        os.makedirs(OUTPUTS_DIR)
+        logger.info(f"Created output directory: {OUTPUTS_DIR}")
+
     app = AudiobookGeneratorApp()
     app.launch()

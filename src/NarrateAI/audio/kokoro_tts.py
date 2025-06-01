@@ -1,94 +1,157 @@
 import os
 import time
-from typing import Optional
-import torch
+from typing import Optional, List
 import soundfile as sf
 from pydub import AudioSegment
 from kokoro import KPipeline
 import utils.json_handler as jh
 import utils.logging_config as lf
+from utils.constants import OUTPUTS_DIR
 
 logger = lf.configure_logger(__name__)
 json_handler = jh.JsonHandler()
 
-# Retrieve settings dynamically
-MODEL_PATH = json_handler.get_setting('settings.kokoro_tts.model_path')
-
 # --- Constants ---
 SAMPLE_RATE = 24000
+KOKORO_REPO_ID = 'hexgrad/Kokoro-82M'
 
 class Kokoro_TTS:
     def __init__(self,
                  sample_rate: int = SAMPLE_RATE,
-                 model_path: str = MODEL_PATH,
-                 lang_code: str = None,
-                 voice: str = None):
+                 lang_code: Optional[str] = None,
+                 voice: Optional[str] = None,
+                 speed: Optional[float] = None,
+                 device: Optional[str] = None,
+                 output_format: Optional[str] = None):
         self.sample_rate = sample_rate
-        self.model_path = model_path 
-        self.lang_code = lang_code if lang_code is not None else json_handler.get_setting('settings.kokoro_tts.lang_code')
-        self.voice = voice if voice is not None else json_handler.get_setting('settings.kokoro_tts.voice')     
-        self.pipeline: Optional[KPipeline] = None      
-        if self.lang_code and self.voice and KPipeline is not None:
-            self.pipeline = self._initialize_pipeline()
-            logger.info(f"TTS initialized with lang_code='{self.lang_code}', voice='{self.voice}'")
-        else:
-            logger.warning("TTS pipeline not initialized due to missing lang_code/voice or KPipeline not available.")
+        # Prioritize constructor arguments, then JSON settings
+        tts_settings = json_handler.get_setting('settings.kokoro_tts')
+        if tts_settings is None:
+            # This case should ideally not happen if config.json is present and correct
+            logger.critical("Failed to load 'settings.kokoro_tts' from JSON. TTS will likely fail.")
+            tts_settings = {} # Prevent further NoneType errors, rely on defaults or raise
 
-    def _initialize_pipeline(self) -> Optional[KPipeline]:
-        if KPipeline is None:
-            return None
+        self.lang_code = lang_code if lang_code is not None else tts_settings.get('lang_code')
+        self.voice = voice if voice is not None else tts_settings.get('voice')
+        self.speed = speed if speed is not None else tts_settings.get('speed', 1.0)
+        self.device = device if device is not None else tts_settings.get('device', 'cpu')
+        self.output_format = output_format if output_format is not None else tts_settings.get('output_format', 'wav') # Default format
+        
+        self.pipeline: Optional[KPipeline] = None
+
+        if self.lang_code and self.voice:
+            try:
+                self.pipeline = self._initialize_pipeline()
+                logger.info(f"TTS initialized: lang='{self.lang_code}', voice='{self.voice}', speed='{self.speed}', device='{self.device}', format='{self.output_format}'")
+            except RuntimeError as e:
+                logger.error(f"TTS initialization failed during __init__: {e}")
+        else:
+            logger.warning("TTS pipeline not auto-initialized in __init__: lang_code or voice is missing. Configure settings or expect errors.")
+
+    def _initialize_pipeline(self) -> KPipeline:
+        if not self.lang_code or not self.voice:
+             logger.error("Cannot initialize pipeline: lang_code or voice is not set.")
+             raise RuntimeError("TTS Pipeline initialization failed: lang_code or voice missing.")
         try:
-            repo_id = 'hexgrad/Kokoro-82M'
-            logger.info(f"Initializing KokoroTTS pipeline (repo='{repo_id}', lang='{self.lang_code}')...")
+            logger.info(f"Initializing KokoroTTS pipeline (repo='{KOKORO_REPO_ID}', lang='{self.lang_code}', device='{self.device}')...")
             start_time = time.time()
-            pipeline = KPipeline(repo_id=repo_id, lang_code=self.lang_code)
+            pipeline = KPipeline(repo_id=KOKORO_REPO_ID, lang_code=self.lang_code, device=self.device)
             end_time = time.time()
             logger.info(f"KokoroTTS pipeline initialized successfully in {end_time - start_time:.2f} seconds.")
             return pipeline
+        except ImportError: 
+            logger.critical('Fatal: KPipeline could not be imported. Ensure "kokoro" library is installed.', exc_info=True)
+            raise RuntimeError("TTS Pipeline initialization failed: 'kokoro' library not found.")
         except Exception as e:
-            logger.error(f'Fatal: Failed to initialize KokoroTTS pipeline: {e}', exc_info=True)
-            raise RuntimeError("TTS Pipeline initialization failed.") from e
+            logger.critical(f'Fatal: Failed to initialize KokoroTTS pipeline: {e}', exc_info=True)
+            raise RuntimeError(f"TTS Pipeline initialization failed: {e}") from e
     
-    def process_audio(self, input_text: str, file_name: str):
-        if self.pipeline is None:
-            logger.error("TTS pipeline is not initialized. Cannot process audio.")
-            raise RuntimeError("TTS pipeline is not initialized. Please check settings.")
-        try:
-            output_dir = 'outputs'
-            chunk_output_dir = os.path.join(output_dir, file_name)
-            # Ensure output directory exists
-            if not os.path.exists(chunk_output_dir):
-                os.makedirs(chunk_output_dir, exist_ok=True)
+    def process_audio(self, input_text: str, base_file_name: str) -> Optional[str]:
+        base_file_name = os.path.basename(base_file_name)
 
+        if not self.pipeline:
+            logger.warning("TTS pipeline was not initialized. Attempting to initialize now.")
+            if self.lang_code and self.voice:
+                try:
+                    self.pipeline = self._initialize_pipeline()
+                    logger.info("TTS pipeline successfully re-initialized for processing.")
+                except RuntimeError as e:
+                    logger.error(f"Failed to re-initialize TTS pipeline for '{base_file_name}': {e}")
+                    raise # Re-raise, as processing cannot continue
+            else:
+                logger.error(f"Cannot initialize TTS pipeline for '{base_file_name}': lang_code or voice is missing.")
+                raise RuntimeError("TTS pipeline cannot be initialized due to missing settings (lang_code, voice).")
+
+        if not input_text or input_text.isspace():
+            logger.warning(f"Input text for '{base_file_name}' is empty or whitespace. Skipping audio generation.")
+            return None
+
+        chunk_output_dir = os.path.join(OUTPUTS_DIR, base_file_name + "_chunks")
+        audio_output_paths: List[str] = []
+
+        try:
+            os.makedirs(chunk_output_dir, exist_ok=True)
+            logger.debug(f"Chunk output directory for '{base_file_name}': {chunk_output_dir}")
+            split_pattern = r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|\!|։|۔|。)\s'
+            
             generator = self.pipeline(
                 text=input_text,
                 voice=self.voice,
-                speed=1,
-                split_pattern=r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|\!)\s'
+                speed=self.speed,
+                split_pattern=split_pattern
             )
+            
+            for i, (gs, ps, audio_data) in enumerate(generator):
+                chunk_file_name = f"{base_file_name}_chunk_{i:03d}.wav" # Padded for sorting
+                chunk_file_path = os.path.join(chunk_output_dir, chunk_file_name)
+                sf.write(chunk_file_path, audio_data, self.sample_rate)
+                audio_output_paths.append(chunk_file_path)
+            
+            if not audio_output_paths:
+                logger.warning(f"No audio chunks generated for '{base_file_name}'. Text might be unsuitable or too short.")
+                return None # No chunks, so no final file
 
-            # Generate and save audio for each chunk
-            audio_output_paths = []
-            for i, (gs, ps, audio) in enumerate(generator):
-                chunk_file_name = f"{file_name}_chunk_{i}.wav"
-                sf.write(os.path.join(chunk_output_dir, chunk_file_name), audio, self.sample_rate)
-                audio_output_paths.append(os.path.join(chunk_output_dir, chunk_file_name))
+            logger.info(f"Generated {len(audio_output_paths)} audio chunks for '{base_file_name}'.")
 
-            # Combine all chunks into one audio file
-            combined = AudioSegment.empty()
+            combined_audio = AudioSegment.empty()
             for path in audio_output_paths:
-                segment = AudioSegment.from_wav(path)
-                combined += segment
+                try:
+                    segment = AudioSegment.from_wav(path)
+                    combined_audio += segment
+                except Exception as e: 
+                    logger.error(f"Error loading audio chunk '{path}' for '{base_file_name}': {e}. Skipping chunk.", exc_info=True)
+                    continue 
 
-            combined_output_path = os.path.join(output_dir, f'{file_name}.wav')
-            combined.export(combined_output_path, format="wav")
+            if len(combined_audio) == 0: # Check if combined audio has any duration
+                logger.error(f"Combined audio for '{base_file_name}' is empty. All chunks might have failed processing or were unsuitable.")
+                return None
 
-            # Delete the chunk files
-            for path in audio_output_paths:
-                os.remove(path)
-            os.removedirs(chunk_output_dir)
+            final_output_path = os.path.join(OUTPUTS_DIR, f'{base_file_name}.{self.output_format}')
+            combined_audio.export(final_output_path, format=self.output_format)
+            logger.info(f"Audiobook '{final_output_path}' generated successfully for '{base_file_name}'.")
+            return final_output_path
 
-            return combined_output_path
+        except RuntimeError as e:
+            logger.error(f"Runtime error during audio processing for '{base_file_name}': {e}", exc_info=True)
+            raise
         except Exception as e:
-            logger.error(f"An error occurred while processing audio: {e}", exc_info=True)
-            raise RuntimeError(f"Audio processing failed: {e}")
+            logger.error(f"Unexpected error during audio processing for '{base_file_name}': {e}", exc_info=True)
+            raise RuntimeError(f"Audio processing failed unexpectedly for '{base_file_name}': {e}") from e
+        finally:
+            # Cleanup: Remove chunk files and attempt to remove the chunk directory
+            if os.path.exists(chunk_output_dir):
+                for path in audio_output_paths:
+                    if os.path.exists(path):
+                        try:
+                            os.remove(path)
+                        except OSError as e_rm:
+                            logger.warning(f"Could not remove chunk file {path} for '{base_file_name}': {e_rm}")
+                try:
+                    if not os.listdir(chunk_output_dir): # Only remove if empty
+                         os.rmdir(chunk_output_dir)
+                         logger.debug(f"Successfully removed empty chunk directory: {chunk_output_dir}")
+                    else:
+                        # This case might happen if some chunks failed to be processed by pydub but were still written
+                        logger.warning(f"Chunk directory {chunk_output_dir} for '{base_file_name}' not empty after processing, not removing. Contents: {os.listdir(chunk_output_dir)}")
+                except OSError as e_rmdir:
+                    logger.warning(f"Could not remove chunk directory {chunk_output_dir} for '{base_file_name}': {e_rmdir}")
