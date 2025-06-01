@@ -20,42 +20,53 @@ class AudiobookGeneratorApp:
         self.file_reader = FileReader()
         self.json_handler = jh.JsonHandler()
 
+    def _read_and_validate_input_file(self, uploaded_file_path: str, progress_reporter):
+        """Reads the uploaded file and performs initial validation."""
+        if not uploaded_file_path:
+            logger.warning("No file path provided to _read_and_validate_input_file.")
+            raise ValueError("Uploaded file path is missing.")
+
+        base_uploaded_filename = os.path.basename(uploaded_file_path)
+        progress_reporter(0.05, desc=f"Reading file: {base_uploaded_filename}...")
+        
+        text_content = self.file_reader.read_file(uploaded_file_path) # Can raise FileNotFoundError, ValueError, NotImplementedError
+        logger.info(f"Successfully read content from {base_uploaded_filename}")
+
+        if not text_content or text_content.isspace():
+            logger.warning(f"File {base_uploaded_filename} is empty or contains no readable text.")
+            raise ValueError(f"The file '{base_uploaded_filename}' is empty or contains no extractable text.")
+        
+        return text_content, base_uploaded_filename
+
     def generate_audiobook(self, uploaded_file_path: str, progress=gr.Progress()):
         progress(0, desc="Initializing...")
         if not uploaded_file_path:
             logger.warning("No file uploaded for audiobook generation.")
             raise gr.Error("Please upload a file to generate an audiobook.")
 
-        base_uploaded_filename = os.path.basename(uploaded_file_path)
-        logger.info(f"Attempting to generate audiobook for file: {base_uploaded_filename}")
+        base_uploaded_filename_for_error_logging = os.path.basename(uploaded_file_path) if uploaded_file_path else "unknown_file"
 
         try:
-            progress(0.05, desc=f"Reading file: {base_uploaded_filename}...")
-            text_content = self.file_reader.read_file(uploaded_file_path)
-            logger.info(f"Successfully read content from {base_uploaded_filename}")
-
-            if not text_content or text_content.isspace():
-                logger.warning(f"File {base_uploaded_filename} is empty or contains no readable text.")
-                raise gr.Error(f"The file '{base_uploaded_filename}' is empty or contains no extractable text.")
+            text_content, base_uploaded_filename = self._read_and_validate_input_file(uploaded_file_path, progress)
+            base_uploaded_filename_for_error_logging = base_uploaded_filename # Update with actual name
 
             progress(0.1, desc="File read successfully. Preparing for audio generation...")
             output_base_name = os.path.splitext(base_uploaded_filename)[0]
             logger.info(f"Processing audio for '{output_base_name}'")
 
             def tts_progress_callback(current_step: int, total_steps: int, description: str):
-                if total_steps > 0 :
-                    # Calculate overall progress:
-                    # Assume chunk generation is 80% of the work, combining is 20%
+                if total_steps > 0:
+                    stage_progress = current_step / total_steps
                     if "Generating" in description:
-                        stage_progress = current_step / total_steps
-                        overall_progress = 0.1 + (stage_progress * 0.8) # 0.1 is initial, 0.8 for generation phase
+                        # Initial app progress is 0.1, TTS generation phase is 80% of the rest
+                        overall_progress = 0.1 + (stage_progress * 0.8)
                     elif "Combining" in description:
-                        stage_progress = current_step / total_steps
-                        overall_progress = 0.1 + 0.8 + (stage_progress * 0.1) # 0.1 initial, 0.8 generation, 0.1 for combining
+                        # TTS combining phase is 10% after generation (0.1 + 0.8 base)
+                        overall_progress = 0.1 + 0.8 + (stage_progress * 0.1)
                     else: # Fallback for other descriptions if any
-                        overall_progress = current_step / total_steps
+                        overall_progress = 0.1 + (current_step / total_steps * 0.9) # Assume it fits within the 90% post-initial
                     progress(min(overall_progress, 0.99), desc=description) # Cap at 0.99 until truly done
-                else: # When total_steps is not meaningful
+                else: # When total_steps is not meaningful (e.g., initialization phase within TTS)
                     progress(desc=description)
 
 
@@ -70,26 +81,26 @@ class AudiobookGeneratorApp:
                 logger.info(f"Audiobook generated successfully: {audio_output_path}")
                 return audio_output_path
             elif audio_output_path is None:
-                 logger.warning(f"Audiobook generation for '{output_base_name}' resulted in no output file.")
+                 logger.warning(f"Audiobook generation for '{output_base_name}' resulted in no output file (e.g. input text was empty after processing).")
                  raise gr.Error(f"Audiobook generation for '{output_base_name}' did not produce an audio file. Input text might have been empty or unsuitable.")
-            else:
+            else: # audio_output_path is not None, but file doesn't exist
                 logger.error(f"Audiobook generation failed for '{output_base_name}'. Output path '{audio_output_path}' does not exist.")
                 raise gr.Error("Audiobook generation failed: The audio file was not created. Please check logs.")
 
         except FileNotFoundError as e:
-            logger.error(f"File not found during audiobook generation: {e}", exc_info=True)
+            logger.error(f"File not found during audiobook generation for '{base_uploaded_filename_for_error_logging}': {e}", exc_info=True)
             raise gr.Error(f"An error occurred: {str(e)}. Ensure the file exists and was uploaded correctly.")
         except ValueError as e:
-            logger.error(f"Value error during audiobook generation: {e}", exc_info=True)
+            logger.error(f"Value error during audiobook generation for '{base_uploaded_filename_for_error_logging}': {e}", exc_info=True)
             raise gr.Error(str(e))
         except NotImplementedError as e:
-            logger.error(f"NotImplementedError during audiobook generation: {e}", exc_info=True)
+            logger.error(f"NotImplementedError during audiobook generation for '{base_uploaded_filename_for_error_logging}': {e}", exc_info=True)
             raise gr.Error(f"Processing error: {str(e)}. You might need to install additional libraries (e.g., python-docx).")
         except RuntimeError as e:
-            logger.error(f"Runtime error during audiobook generation: {e}", exc_info=True)
+            logger.error(f"Runtime error during audiobook generation for '{base_uploaded_filename_for_error_logging}': {e}", exc_info=True)
             raise gr.Error(f"Audiobook generation encountered a runtime problem: {str(e)}. Check logs for details.")
         except Exception as e:
-            logger.critical(f"Critical unexpected error in generate_audiobook for {base_uploaded_filename}: {e}", exc_info=True)
+            logger.critical(f"Critical unexpected error in generate_audiobook for {base_uploaded_filename_for_error_logging}: {e}", exc_info=True)
             raise gr.Error(f"An unexpected error occurred. Details: {str(e)}. Check application logs.")
 
     def update_settings(self, lang_code, voice, speed, device):
@@ -130,13 +141,15 @@ class AudiobookGeneratorApp:
         current_voice = kokoro_settings.get('voice', "")
         current_speed = float(kokoro_settings.get('speed', 1.0))
         current_device = kokoro_settings.get('device', 'cpu')
-        # current_output_format is no longer needed here as it's fixed to 'wav'
 
         available_lang_codes = list(language_voices_map.keys())
         initial_voices = language_voices_map.get(current_lang_code, [])
 
-        if current_voice not in initial_voices:
-            current_voice = initial_voices[0] if initial_voices else None
+        if not initial_voices: # If current_lang_code has no voices
+             current_voice = None
+        elif current_voice not in initial_voices :
+            current_voice = initial_voices[0]
+
 
         with gr.Row():
             lang_code_input = gr.Dropdown(
@@ -152,7 +165,6 @@ class AudiobookGeneratorApp:
         device_input = gr.Radio(
             choices=["cpu", "cuda"], value=current_device, label="Device", interactive=True
         )
-        # output_format_input dropdown is removed
 
         update_button = gr.Button("Update Settings")
         output_message = gr.Textbox(label="Status", interactive=False, lines=1)
@@ -170,7 +182,7 @@ class AudiobookGeneratorApp:
 
         update_button.click(
             fn=self.update_settings,
-            inputs=[lang_code_input, voice_input, speed_input, device_input], # output_format_input removed
+            inputs=[lang_code_input, voice_input, speed_input, device_input],
             outputs=output_message
         )
         logger.info("Settings UI components built.")
@@ -178,7 +190,6 @@ class AudiobookGeneratorApp:
 
     def create_main_interface(self):
         logger.info("Creating main Gradio interface using gr.Tabs.")
-
         with gr.Blocks(theme=gr.themes.Soft(), title="NarrateAI Audiobook Generator") as demo_ui:
             with gr.Tabs():
                 with gr.TabItem("Audiobook Generator"):
@@ -186,7 +197,7 @@ class AudiobookGeneratorApp:
                     gr.Interface(
                         fn=self.generate_audiobook,
                         inputs=[gr.File(label="Upload your document (TXT, PDF, EPUB, DOCX, HTML)", type="filepath")],
-                        outputs=[gr.Audio(label="Generated Audiobook (WAV format)", type="filepath")], # Updated label
+                        outputs=[gr.Audio(label="Generated Audiobook (WAV format)", type="filepath")],
                         allow_flagging="never"
                     )
 

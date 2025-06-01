@@ -27,69 +27,78 @@ class JsonHandler:
 
     def _load_config(self):
         if not os.path.exists(self.config_path):
-            logger.warning(f"Config file not found at {self.config_path}. Creating a default one.")
+            logger.info(f"Config file not found at {self.config_path}. Creating a default one.")
             default_config = {
                 "settings": {
                     "kokoro_tts": {
-                        "model_path": "models/kokoro_tts",
                         "lang_code": "a",
-                        "voice": "af_heart"
+                        "voice": "af_heart",
+                        "speed": 1.0,
+                        "device": "cpu",
+                        "language_voices_map": { # Minimal example
+                             "a": ["af_heart", "af_bella"],
+                             "e": ["ef_dora", "em_alex"]
+                        }
                     }
                 }
             }
-            self._save_config(default_config)
-            return default_config
-        
+            try:
+                self._save_config(default_config)
+                return default_config
+            except Exception as e:
+                logger.error(f"Failed to create and save default config at {self.config_path}: {e}", exc_info=True)
+                return {}
+
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                config = json.load(f)
+                return config
         except json.JSONDecodeError as e:
-            logger.error(f"Error decoding JSON from {self.config_path}: {e}")
+            logger.error(f"Error decoding JSON from {self.config_path}: {e}. Consider deleting or fixing the file.", exc_info=True)
             raise
         except Exception as e:
-            logger.error(f"An unexpected error occurred while loading config from {self.config_path}: {e}")
+            logger.error(f"An unexpected error occurred while loading config from {self.config_path}: {e}", exc_info=True)
             raise
 
     def _save_config(self, data):
         try:
             os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
             with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=4)
+                json.dump(data, f, indent=4, ensure_ascii=False)
             logger.info(f"Configuration saved to {self.config_path}")
         except Exception as e:
-            logger.error(f"Failed to save configuration to {self.config_path}: {e}")
+            logger.error(f"Failed to save configuration to {self.config_path}: {e}", exc_info=True)
             raise
 
-    def get_setting(self, key_path: str):
+    def get_setting(self, key_path: str, default=None):
         keys = key_path.split('.')
         current_level = self.config_data
         for key in keys:
             if isinstance(current_level, dict) and key in current_level:
                 current_level = current_level[key]
             else:
-                logger.warning(f"Setting '{key_path}' not found. Returning None.")
-                return None
+                logger.warning(f"Setting '{key_path}' not found. Returning default: {default}.")
+                return default
         return current_level
 
     def set_setting(self, key_path: str, value):
         keys = key_path.split('.')
         current_level = self.config_data
-        for i, key in enumerate(keys):
-            if i == len(keys) - 1:
-                if isinstance(current_level, dict):
-                    current_level[key] = value
-                    logger.info(f"Setting '{key_path}' updated to '{value}'")
-                else:
-                    logger.error(f"Cannot set value for '{key_path}': parent is not a dictionary.")
-                    return False
-            else:
-                if isinstance(current_level, dict) and key in current_level:
-                    current_level = current_level[key]
-                elif isinstance(current_level, dict):
-                    current_level[key] = {}
-                    current_level = current_level[key]
-                else:
-                    logger.error(f"Cannot traverse path '{key_path}': '{key}' is not a dictionary.")
-                    return False
-        self._save_config(self.config_data)
-        return True
+        
+        for i, key in enumerate(keys[:-1])
+            if not isinstance(current_level, dict):
+                logger.error(f"Cannot traverse path '{key_path}': '{key}' is not a dictionary in the path.")
+                return False
+            current_level = current_level.setdefault(key, {}) # Ensure path exists
+
+        if isinstance(current_level, dict):
+            current_level[keys[-1]] = value
+            logger.info(f"Setting '{key_path}' updated to '{value}'")
+            try:
+                self._save_config(self.config_data)
+                return True
+            except Exception:
+                return False
+        else:
+            logger.error(f"Cannot set value for '{key_path}': final parent element is not a dictionary.")
+            return False

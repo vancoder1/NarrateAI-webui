@@ -1,7 +1,6 @@
 {
     "settings": {
         "kokoro_tts": {
-            "model_path": "models/kokoro_tts",
             "lang_code": "a",
             "voice": "af_heart",
             "speed": 1.0,
