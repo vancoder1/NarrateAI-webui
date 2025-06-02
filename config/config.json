@@ -4,7 +4,7 @@
             "lang_code": "a",
             "voice": "af_heart",
             "speed": 1.0,
-            "device": "cuda",
+            "device": "cpu",
             "language_voices_map": {
                 "a": [
                     "af_heart",
