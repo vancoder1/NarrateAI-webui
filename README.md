@@ -2,7 +2,7 @@
 
 NarrateAI-webui is a user-friendly tool that leverages the power of **Kokoro TTS** to convert your documents and books into high-quality audiobooks. With its intuitive Gradio web interface, you can effortlessly upload files in various formats and receive a polished audiobook ready for listening.
 
-<img width="1280" alt="NarrateAI Web UI Screenshot" src="https://github.com/vancoder1/NarrateAI-webui/assets/53685919/57665255-ae33-4f2b-ac2c-e97578230229">
+<img width="1280" alt="NarrateAI Web UI Screenshot" src="https://github.com/user-attachments/assets/bfa24f3a-50f5-4a19-ba6e-a63cd9aa40d4">
 
 ## ✨ What's New in this Major Update?
 
