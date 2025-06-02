@@ -2,6 +2,7 @@ import os
 import warnings
 import gradio as gr
 import audio.kokoro_tts as kokoro
+from loguru import logger
 from utils.file_reader import FileReader
 import utils.logging_config as lf
 import utils.json_handler as jh
@@ -12,7 +13,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-logger = lf.configure_logger(__name__)
+lf.setup_logging()
 
 class AudiobookGeneratorApp:
     def __init__(self):

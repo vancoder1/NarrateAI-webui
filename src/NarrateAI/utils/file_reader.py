@@ -3,9 +3,7 @@ from pdfreader import SimplePDFViewer, PageDoesNotExist
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
-import utils.logging_config as lf
-
-logger = lf.configure_logger(__name__)
+from loguru import logger
 
 class FileReader:
     def __init__(self):

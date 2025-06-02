@@ -1,10 +1,8 @@
 import json
 import os
 import threading
-import utils.logging_config as lf
+from loguru import logger
 from utils.constants import CONFIG_FILE_PATH
-
-logger = lf.configure_logger(__name__)
 
 class JsonHandler:
     _instance = None
@@ -85,7 +83,7 @@ class JsonHandler:
         keys = key_path.split('.')
         current_level = self.config_data
         
-        for i, key in enumerate(keys[:-1])
+        for i, key in enumerate(keys[:-1]):
             if not isinstance(current_level, dict):
                 logger.error(f"Cannot traverse path '{key_path}': '{key}' is not a dictionary in the path.")
                 return False

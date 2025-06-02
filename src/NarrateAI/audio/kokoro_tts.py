@@ -6,10 +6,9 @@ import soundfile as sf
 from pydub import AudioSegment
 from kokoro import KPipeline
 import utils.json_handler as jh
-import utils.logging_config as lf
+from loguru import logger
 from utils.constants import OUTPUTS_DIR
 
-logger = lf.configure_logger(__name__)
 json_handler = jh.JsonHandler()
 
 # --- Constants ---

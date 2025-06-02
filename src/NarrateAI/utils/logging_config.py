@@ -1,90 +1,43 @@
+from loguru import logger
+import sys
 import os
-import logging
-from logging.handlers import RotatingFileHandler
-import datetime as dt
-from typing import Optional
 from utils import constants
 
-class CustomFormatter(logging.Formatter):
-    """Adds color to console log messages based on level."""
-    COLORS = {
-        logging.DEBUG: '\033[0;36m',  # Cyan
-        logging.INFO: '\033[0;32m',   # Green
-        logging.WARNING: '\033[0;33m',  # Yellow
-        logging.ERROR: '\033[0;31m',  # Red
-        logging.CRITICAL: '\033[0;35m'  # Magenta
-    }
-    RESET = '\033[0m'
+def setup_logging():
+    logger.remove() # Remove any default handlers
 
-    def __init__(self, fmt: str, datefmt: Optional[str] = None):
-        self._fmt = fmt
-        self._datefmt = datefmt
-        self._formatters = {}
-        for levelno, color in self.COLORS.items():
-            log_fmt = color + self._fmt + self.RESET
-            self._formatters[levelno] = logging.Formatter(log_fmt, datefmt=self._datefmt)
-        self._default_formatter = logging.Formatter(self._fmt, datefmt=self._datefmt)
+    log_dir = 'logs'
+    os.makedirs(log_dir, exist_ok=True) # Ensure log directory exists
 
-    def format(self, record: logging.LogRecord) -> str:
-        formatter = self._formatters.get(record.levelno, self._default_formatter)
-        return formatter.format(record)
+    # Determine effective log level from your constants file
+    effective_log_level = "DEBUG" if constants.DEBUG_MODE else "INFO"
 
-# --- Helper Functions for Handler Setup ---
-def _setup_file_handler(logger: logging.Logger, log_dir: str, max_file_size: int, backup_count: int) -> None:
-    """Sets up the rotating file handler."""
-    os.makedirs(log_dir, exist_ok=True)
-    current_time = dt.datetime.now().strftime('%Y-%m-%d')
-    log_filename = os.path.join(log_dir, f'log_{current_time}.log')
-    file_handler = RotatingFileHandler(
-        log_filename, maxBytes=max_file_size, backupCount=backup_count, encoding='utf-8'
+    # Max file size and backup count from your original config
+    max_file_size_bytes = 5 * 1024 * 1024 # 5MB
+    backup_count = 5 # How many rotated files to keep
+
+    # File logging
+    log_file_path = os.path.join(log_dir, "log_{time:YYYY-MM-DD}.log")
+    logger.add(
+        log_file_path,
+        rotation=f"{max_file_size_bytes}B", # Rotate when file size is reached
+        retention=backup_count,             # Number of backup files to keep
+        level=effective_log_level,
+        encoding="utf-8",
+        enqueue=True  # Make logging asynchronous and thread-safe
     )
-    file_formatter = logging.Formatter(
-        '%(asctime)s | %(levelname)-8s | %(name)s | %(filename)s:%(lineno)d | %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+
+    # Console logging
+    logger.add(
+        sys.stderr,
+        colorize=True,
+        level=effective_log_level,
     )
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
 
-def _setup_console_handler(logger: logging.Logger) -> None:
-    """Sets up the console handler with custom formatting."""
-    console_handler = logging.StreamHandler()
-    console_formatter = CustomFormatter(
-        '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
-
-# --- Main Configuration Function ---
-def configure_logger(name: str, log_dir: str = 'logs',
-                     log_level: Optional[int] = None, # Allows explicit override
-                     max_file_size: int = 5 * 1024 * 1024, backup_count: int = 5) -> logging.Logger:
-    """
-    Configures and returns a logger instance.
-    Log level defaults to DEBUG if constants.DEBUG_MODE is True, otherwise INFO.
-    This can be overridden by passing the log_level argument.
-    """
-    logger = logging.getLogger(name)
-
-    # Determine effective log level
-    if log_level is None:
-        effective_log_level = logging.DEBUG if constants.DEBUG_MODE else logging.INFO
+    # Initial configuration message
+    init_log_message = f"Loguru logger configured. Level: {effective_log_level}."
+    if constants.DEBUG_MODE:
+        init_log_message += " (DEBUG_MODE is ON)"
     else:
-        effective_log_level = log_level
-    
-    logger.setLevel(effective_log_level)
-
-    if not logger.handlers: # Avoid adding handlers multiple times
-        _setup_file_handler(logger, log_dir, max_file_size, backup_count)
-        _setup_console_handler(logger)
-    
-    logger.propagate = False # Prevent propagation to root logger
-
-    init_log_message = f"Logger '{name}' configured with level: {logging.getLevelName(logger.level)}."
-    if log_level is None:
-        init_log_message += f" (DEBUG_MODE is {'ON' if constants.DEBUG_MODE else 'OFF'})"
-    else:
-        init_log_message += " (Explicitly set)"
-
-    logger.log(logging.DEBUG if constants.DEBUG_MODE else logging.INFO, init_log_message)
-    return logger
+        init_log_message += " (DEBUG_MODE is OFF)"
+    logger.info(init_log_message)
