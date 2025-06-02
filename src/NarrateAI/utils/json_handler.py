@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+from pathlib import Path
 from loguru import logger
 from utils.constants import CONFIG_FILE_PATH
 
@@ -16,39 +17,19 @@ class JsonHandler:
             return cls._instance
 
     def __init__(self, config_path=CONFIG_FILE_PATH):
-        with self._lock:
-            if self._initialized:
-                return
-            self.config_path = config_path
-            self.config_data = self._load_config()
-            self._initialized = True
+        if self._initialized:
+            return
+        self.config_path = Path(config_path)
+        self.config_data = self._load_config()
+        self._initialized = True
 
     def _load_config(self):
-        if not os.path.exists(self.config_path):
-            logger.info(f"Config file not found at {self.config_path}. Creating a default one.")
-            default_config = {
-                "settings": {
-                    "kokoro_tts": {
-                        "lang_code": "a",
-                        "voice": "af_heart",
-                        "speed": 1.0,
-                        "device": "cpu",
-                        "language_voices_map": { # Minimal example
-                             "a": ["af_heart", "af_bella"],
-                             "e": ["ef_dora", "em_alex"]
-                        }
-                    }
-                }
-            }
-            try:
-                self._save_config(default_config)
-                return default_config
-            except Exception as e:
-                logger.error(f"Failed to create and save default config at {self.config_path}: {e}", exc_info=True)
-                return {}
+        if not self.config_path.exists():
+            logger.error(f"Config file not found at {self.config_path}.")
+            raise FileNotFoundError(f"Config file not found at {self.config_path}")
 
         try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
+            with self.config_path.open('r', encoding='utf-8') as f:
                 config = json.load(f)
                 return config
         except json.JSONDecodeError as e:
@@ -60,8 +41,8 @@ class JsonHandler:
 
     def _save_config(self, data):
         try:
-            os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
-            with open(self.config_path, 'w', encoding='utf-8') as f:
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.config_path.open('w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
             logger.info(f"Configuration saved to {self.config_path}")
         except Exception as e:
